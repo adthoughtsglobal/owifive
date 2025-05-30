@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Depth Parallax Effect (Focus-Based)</title>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #controlsContainer {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            text-align: center;
+            max-width: 600px; /* Max width for controls */
+            width: 90%;
+        }
+        #imageUpload {
+            display: block;
+            margin: 10px auto 15px auto;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        #status {
+            margin-top: 10px;
+            font-style: italic;
+            color: #555;
+            min-height: 1.2em;
+        }
+        #parallaxCanvas {
+            display: block;
+            border: 1px solid #ccc;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-radius: 8px;
+            background-color: #fff;
+            max-width: 100%;
+            height: auto;
+        }
+        .info-text {
+            margin-bottom: 10px;
+            font-size: 0.9em;
+            color: #666;
+        }
+        .settings {
+            margin-top: 15px;
+            font-size: 0.9em;
+        }
+        .settings label {
+            margin-left: 5px;
+            user-select: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="controlsContainer">
+        <h1>Image Depth Parallax (Focus-Based)</h1>
+        <p class="info-text">
+            Upload an image. Sharpest areas stay fixed (mid-ground).
+            Blurred areas create depth. Use the toggle to change how blur is interpreted.
+        </p>
+        <input type="file" id="imageUpload" accept="image/*">
+        <div class="settings">
+            <input type="checkbox" id="invertDepthToggle">
+            <label for="invertDepthToggle">Interpret Blur as Near (vs. Far)</label>
+        </div>
+        <div id="status">Please upload an image to begin.</div>
+    </div>
+
+    <canvas id="parallaxCanvas" style="display: none;"></canvas>
+
+    <script>
+        // --- Configuration ---
+        const BLOCK_SIZE = 16;
+        const MAX_PARALLAX_OFFSET = 20; // Max displacement for most out-of-focus elements
+        const EDGE_BLUR_AMOUNT = '0.75px'; // Soften block edges
+
+        // --- Global Variables ---
+        let originalImage = null;
+        let imageBlocks = []; // Will store { originalX, originalY, width, height, deviationFromFocus }
+        let canvas = null;
+        let ctx = null;
+        let statusDiv = null;
+        let invertDepthToggle = null;
+
+        let offscreenCanvas = null;
+        let offscreenCtx = null;
+
+        let currentMouseX = 0;
+        let currentMouseY = 0;
+        let animationFrameId = null;
+        let isProcessing = false;
+
+        // --- Initialization ---
+        window.onload = () => {
+            canvas = document.getElementById('parallaxCanvas');
+            ctx = canvas.getContext('2d');
+            statusDiv = document.getElementById('status');
+            invertDepthToggle = document.getElementById('invertDepthToggle');
+            const imageUpload = document.getElementById('imageUpload');
+            imageUpload.addEventListener('change', handleImageUpload);
+
+            offscreenCanvas = document.createElement('canvas');
+            offscreenCtx = offscreenCanvas.getContext('2d');
+
+            canvas.addEventListener('mousemove', (event) => {
+                if (!isProcessing && originalImage) {
+                    const rect = canvas.getBoundingClientRect();
+                    currentMouseX = event.clientX - rect.left;
+                    currentMouseY = event.clientY - rect.top;
+                }
+            });
+
+            canvas.addEventListener('mouseleave', () => {
+                if (originalImage) {
+                    currentMouseX = canvas.width / 2;
+                    currentMouseY = canvas.height / 2;
+                }
+            });
+        };
+
+        // --- Image Handling ---
+        async function handleImageUpload(event) {
+            if (isProcessing) {
+                statusDiv.textContent = 'Processing previous image. Please wait.';
+                return;
+            }
+            const file = event.target.files[0];
+            if (file) {
+                isProcessing = true;
+                if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId);
+                    animationFrameId = null;
+                }
+                canvas.style.display = 'none';
+                originalImage = null;
+                imageBlocks = [];
+
+                statusDiv.textContent = 'Loading image...';
+                await yieldToEventLoop();
+
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    const img = new Image();
+                    img.onload = async () => {
+                        originalImage = img;
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        offscreenCanvas.width = img.width;
+                        offscreenCanvas.height = img.height;
+
+                        currentMouseX = canvas.width / 2;
+                        currentMouseY = canvas.height / 2;
+                        await processUploadedImage(img);
+                        isProcessing = false;
+                        if (imageBlocks.length > 0) {
+                            canvas.style.display = 'block';
+                            if (!animationFrameId) {
+                                renderFrame();
+                            }
+                        } else {
+                             statusDiv.textContent = 'Could not process image. Try another one.';
+                        }
+                    };
+                    img.onerror = () => {
+                        statusDiv.textContent = 'Error loading image. Please try a different file.';
+                        isProcessing = false;
+                    };
+                    img.src = e.target.result;
+                };
+                reader.onerror = () => {
+                    statusDiv.textContent = 'Error reading file.';
+                    isProcessing = false;
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        async function yieldToEventLoop() {
+            return new Promise(resolve => setTimeout(resolve, 0));
+        }
+
+        // --- Core Image Processing ---
+        async function processUploadedImage(imgElement) {
+            statusDiv.textContent = 'Processing: Grayscale...';
+            await yieldToEventLoop();
+            const grayscaleImageData = convertToGrayscale(imgElement);
+            if (!grayscaleImageData) {
+                statusDiv.textContent = 'Error converting to grayscale.';
+                return;
+            }
+
+            statusDiv.textContent = 'Processing: Calculating sharpness...';
+            await yieldToEventLoop();
+            // This function now just returns blocks with raw sharpness
+            const blocksWithSharpness = calculateAllBlockSharpness(grayscaleImageData, imgElement.width, imgElement.height);
+
+            if (blocksWithSharpness.length === 0) {
+                statusDiv.textContent = 'No blocks processed. Image might be too small.';
+                return;
+            }
+            
+            statusDiv.textContent = 'Processing: Normalizing depth (deviation from focus)...';
+            await yieldToEventLoop();
+            // This function now calculates deviationFromFocus and stores it in imageBlocks
+            assignDeviationFromFocus(blocksWithSharpness);
+
+            statusDiv.textContent = 'Processing complete. Move mouse over image.';
+        }
+
+        function convertToGrayscale(imgElement) {
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCanvas.width = imgElement.width;
+            tempCanvas.height = imgElement.height;
+
+            tempCtx.drawImage(imgElement, 0, 0);
+            try {
+                const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+                const data = imageData.data;
+                for (let i = 0; i < data.length; i += 4) {
+                    const r = data[i];
+                    const g = data[i + 1];
+                    const b = data[i + 2];
+                    const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+                    data[i] = gray;
+                    data[i + 1] = gray;
+                    data[i + 2] = gray;
+                }
+                return imageData;
+            } catch (e) {
+                console.error("Error getting ImageData (possibly tainted canvas):", e);
+                statusDiv.textContent = "Error processing image (cross-origin issue?). Try a different image or host.";
+                return null;
+            }
+        }
+
+        function calculateAllBlockSharpness(grayscaleImageData, imageWidth, imageHeight) {
+            const blocks = []; // Will store { originalX, originalY, width, height, sharpness }
+            for (let y = 0; y < imageHeight; y += BLOCK_SIZE) {
+                for (let x = 0; x < imageWidth; x += BLOCK_SIZE) {
+                    const blockActualWidth = Math.min(BLOCK_SIZE, imageWidth - x);
+                    const blockActualHeight = Math.min(BLOCK_SIZE, imageHeight - y);
+
+                    if (blockActualWidth < 3 || blockActualHeight < 3) {
+                        blocks.push({
+                            originalX: x, originalY: y,
+                            width: blockActualWidth, height: blockActualHeight,
+                            sharpness: 0 // Treat tiny blocks as not sharp
+                        });
+                        continue;
+                    }
+                    
+                    const currentBlockGrayscaleValues = [];
+                    for (let r = 0; r < blockActualHeight; r++) {
+                        for (let c = 0; c < blockActualWidth; c++) {
+                            const pixelX = x + c;
+                            const pixelY = y + r;
+                            const R_index = (pixelY * imageWidth + pixelX) * 4;
+                            currentBlockGrayscaleValues.push(grayscaleImageData.data[R_index]);
+                        }
+                    }
+                    
+                    const sharpness = calculateLaplacianVariance(currentBlockGrayscaleValues, blockActualWidth, blockActualHeight);
+                    blocks.push({
+                        originalX: x, originalY: y,
+                        width: blockActualWidth, height: blockActualHeight,
+                        sharpness: sharpness
+                    });
+                }
+            }
+            return blocks;
+        }
+
+        function calculateLaplacianVariance(blockGrayscaleValues, w, h) {
+            if (w < 3 || h < 3) return 0;
+
+            const laplacianResults = [];
+            for (let r = 1; r < h - 1; r++) { // Iterate r for row, c for column
+                for (let c = 1; c < w - 1; c++) {
+                    const centerIdx = r * w + c;
+                    const topIdx = (r - 1) * w + c;
+                    const bottomIdx = (r + 1) * w + c;
+                    const leftIdx = r * w + (c - 1);
+                    const rightIdx = r * w + (c + 1);
+
+                    const centerVal = blockGrayscaleValues[centerIdx];
+                    const topVal = blockGrayscaleValues[topIdx];
+                    const bottomVal = blockGrayscaleValues[bottomIdx];
+                    const leftVal = blockGrayscaleValues[leftIdx];
+                    const rightVal = blockGrayscaleValues[rightIdx];
+                    
+                    const lapVal = (topVal + bottomVal + leftVal + rightVal) - 4 * centerVal;
+                    laplacianResults.push(lapVal);
+                }
+            }
+
+            if (laplacianResults.length < 2) return 0;
+
+            const sum = laplacianResults.reduce((acc, val) => acc + val, 0);
+            const mean = sum / laplacianResults.length;
+            const variance = laplacianResults.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / laplacianResults.length;
+            return variance;
+        }
+
+        function assignDeviationFromFocus(blocksWithSharpness) {
+            if (blocksWithSharpness.length === 0) {
+                imageBlocks = [];
+                return;
+            }
+
+            const sharpnessValues = blocksWithSharpness.map(b => b.sharpness).filter(s => isFinite(s));
+            if (sharpnessValues.length === 0) {
+                 imageBlocks = blocksWithSharpness.map(b => ({...b, deviationFromFocus: 0.5 })); // Default if no valid sharpness
+                 return;
+            }
+
+            let minSharpness = Math.min(...sharpnessValues);
+            let maxSharpness = Math.max(...sharpnessValues);
+            
+            imageBlocks = blocksWithSharpness.map(block => {
+                let deviationFromFocus = 0; // Default for sharpest or if range is zero
+
+                if (maxSharpness - minSharpness > 0.00001) { // Avoid division by zero if all sharpness is effectively the same
+                    if (!isFinite(block.sharpness)) {
+                         deviationFromFocus = 1.0; // Treat non-finite sharpness as maximally blurred
+                    } else {
+                        const normalizedSharpness = (block.sharpness - minSharpness) / (maxSharpness - minSharpness);
+                        deviationFromFocus = 1.0 - normalizedSharpness; // 0 for sharpest, 1 for blurriest
+                    }
+                } else if (maxSharpness === 0 && minSharpness === 0) { // If image is completely flat black (all sharpness 0)
+                    deviationFromFocus = 1.0; // Treat as maximally blurred uniformly
+                }
+                // else, if all blocks have the same non-zero sharpness, deviationFromFocus remains 0 (all "in focus" relative to each other)
+
+                return {
+                    originalX: block.originalX,
+                    originalY: block.originalY,
+                    width: block.width,
+                    height: block.height,
+                    deviationFromFocus: deviationFromFocus
+                };
+            });
+        }
+
+        // --- Rendering ---
+        function renderFrame() {
+            if (!originalImage || imageBlocks.length === 0 || isProcessing) {
+                animationFrameId = requestAnimationFrame(renderFrame);
+                return;
+            }
+            drawParallax(currentMouseX, currentMouseY);
+            animationFrameId = requestAnimationFrame(renderFrame);
+        }
+
+        function drawParallax(mouseX, mouseY) {
+            offscreenCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+
+            const centerX = offscreenCanvas.width / 2;
+            const centerY = offscreenCanvas.height / 2;
+            
+            // Normalized mouse direction from center (-1 to 1)
+            const mouseDirectionX = centerX === 0 ? 0 : (mouseX - centerX) / centerX;
+            const mouseDirectionY = centerY === 0 ? 0 : (mouseY - centerY) / centerY;
+
+            const interpretBlurAsNear = invertDepthToggle.checked;
+
+            imageBlocks.forEach(block => {
+                // block.deviationFromFocus: 0 for sharpest (in-focus), 1 for blurriest (most out-of-focus)
+                const depthEffectMagnitude = block.deviationFromFocus;
+                
+                let depthSign = -1; // Default: blur is far (moves opposite to foreground)
+                if (interpretBlurAsNear) {
+                    depthSign = 1;  // Blur is near (moves with foreground)
+                }
+
+                // finalParallaxFactor: 
+                // - In-focus (deviation=0) => 0 (no displacement)
+                // - Max deviation (blur=far, sign=-1) => -1 * MAX_PARALLAX_OFFSET
+                // - Max deviation (blur=near, sign=1) =>  1 * MAX_PARALLAX_OFFSET
+                const finalParallaxFactor = depthEffectMagnitude * depthSign;
+
+                // Displacement:
+                // Near objects (positive finalParallaxFactor) move more in the direction of mouse movement relative to image center.
+                // Far objects (negative finalParallaxFactor) move in the opposite direction.
+                // Standard parallax: If mouse moves right, near objects appear to move left relative to distant background.
+                // So, displacement should be negative of mouseDirection for near objects.
+                const offsetX = -mouseDirectionX * finalParallaxFactor * MAX_PARALLAX_OFFSET;
+                const offsetY = -mouseDirectionY * finalParallaxFactor * MAX_PARALLAX_OFFSET;
+
+                const targetX = block.originalX + offsetX;
+                const targetY = block.originalY + offsetY;
+
+                offscreenCtx.drawImage(
+                    originalImage,
+                    block.originalX, block.originalY, 
+                    block.width, block.height,        
+                    targetX, targetY,                 
+                    block.width, block.height         
+                );
+            });
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.filter = `blur(${EDGE_BLUR_AMOUNT})`;
+            ctx.drawImage(offscreenCanvas, 0, 0);
+            ctx.filter = 'none';
+        }
+    </script>
+</body>
+</html>
