@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Perspective Image Cropper</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overscroll-behavior: none; /* Prevent pull-to-refresh on mobile affecting canvas interaction */
+        }
+        canvas {
+            touch-action: none; /* Improve touch interactions on canvas */
+            border: 1px solid #ccc;
+            border-radius: 0.5rem;
+        }
+        .handle {
+            position: absolute; /* We will draw handles on canvas, not use DOM elements */
+            width: 12px;
+            height: 12px;
+            background-color: rgba(0, 123, 255, 0.7);
+            border: 1px solid white;
+            border-radius: 50%;
+            cursor: grab;
+            box-shadow: 0 0 5px rgba(0,0,0,0.5);
+        }
+        .handle.active {
+            background-color: rgba(255, 0, 0, 0.7);
+            cursor: grabbing;
+        }
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1000;
+            display: none; /* Hidden by default */
+        }
+        @keyframes spin {
+            0% { transform: translate(-50%, -50%) rotate(0deg); }
+            100% { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #333;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            z-index: 1001;
+            display: none;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+        }
+        .toast.show {
+            display: block;
+            opacity: 1;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
+
+    <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-4xl">
+        <h1 class="text-3xl font-bold text-center text-gray-700 mb-6">Perspective Image Cropper</h1>
+
+        <div class="mb-6">
+            <label for="imageUpload" class="block text-sm font-medium text-gray-700 mb-1">Upload Image:</label>
+            <input type="file" id="imageUpload" accept="image/*" class="block w-full text-sm text-gray-900 bg-gray-50 rounded-lg border border-gray-300 cursor-pointer focus:outline-none p-2">
+        </div>
+
+        <div class="flex flex-wrap gap-4 mb-6 items-center justify-center">
+            <button id="cropButton" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-150 ease-in-out disabled:opacity-50" disabled>Crop Image</button>
+            <button id="resetPointsButton" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-150 ease-in-out disabled:opacity-50" disabled>Reset Points</button>
+            <div class="flex items-center gap-2">
+                <label for="outputWidth" class="text-sm font-medium text-gray-700">Output Width:</label>
+                <input type="number" id="outputWidth" value="400" class="w-20 p-2 border border-gray-300 rounded-md text-sm">
+            </div>
+            <div class="flex items-center gap-2">
+                <label for="outputHeight" class="text-sm font-medium text-gray-700">Output Height:</label>
+                <input type="number" id="outputHeight" value="300" class="w-20 p-2 border border-gray-300 rounded-md text-sm">
+            </div>
+        </div>
+        
+        <div id="loader" class="loader"></div>
+        <div id="toast" class="toast"></div>
+
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+                <h2 class="text-xl font-semibold text-gray-700 mb-2 text-center">Source Image</h2>
+                <p class="text-xs text-gray-500 mb-2 text-center">Drag the handles to define the crop area.</p>
+                <canvas id="sourceCanvas" class="w-full h-auto mx-auto bg-gray-200"></canvas>
+            </div>
+            <div>
+                <h2 class="text-xl font-semibold text-gray-700 mb-2 text-center">Cropped Output</h2>
+                <canvas id="outputCanvas" class="w-full h-auto mx-auto bg-gray-200"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const imageUpload = document.getElementById('imageUpload');
+        const sourceCanvas = document.getElementById('sourceCanvas');
+        const outputCanvas = document.getElementById('outputCanvas');
+        const cropButton = document.getElementById('cropButton');
+        const resetPointsButton = document.getElementById('resetPointsButton');
+        const outputWidthInput = document.getElementById('outputWidth');
+        const outputHeightInput = document.getElementById('outputHeight');
+        const loader = document.getElementById('loader');
+        const toast = document.getElementById('toast');
+
+        const sourceCtx = sourceCanvas.getContext('2d');
+        const outputCtx = outputCanvas.getContext('2d');
+
+        let img = null;
+        let originalImageWidth = 0;
+        let originalImageHeight = 0;
+        let displayImageWidth = 0;
+        let displayImageHeight = 0;
+
+        let points = []; 
+        const HANDLE_RADIUS = 8;
+        const INTERACTION_RADIUS = 15;
+        let activePointIndex = -1;
+        let scaleFactor = 1;
+        function showToast(message, duration = 3000) {
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, duration);
+        }
+
+        imageUpload.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    img = new Image();
+                    img.onload = () => {
+                        originalImageWidth = img.width;
+                        originalImageHeight = img.height;
+                        
+                        const maxDisplayWidth = sourceCanvas.parentElement.clientWidth > 0 ? sourceCanvas.parentElement.clientWidth : 500;
+                        scaleFactor = maxDisplayWidth / originalImageWidth;
+                        if (originalImageHeight * scaleFactor > 400) {
+                             scaleFactor = 400 / originalImageHeight;
+                        }
+                        if (scaleFactor > 1) scaleFactor = 1;
+
+                        displayImageWidth = originalImageWidth * scaleFactor;
+                        displayImageHeight = originalImageHeight * scaleFactor;
+
+                        sourceCanvas.width = displayImageWidth;
+                        sourceCanvas.height = displayImageHeight;
+                        
+                        // Set output canvas dimensions initially
+                        outputCanvas.width = parseInt(outputWidthInput.value);
+                        outputCanvas.height = parseInt(outputHeightInput.value);
+                        outputCtx.fillStyle = '#e5e7eb'; // bg-gray-200
+                        outputCtx.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
+
+
+                        initializePoints();
+                        drawSourceCanvas();
+                        cropButton.disabled = false;
+                        resetPointsButton.disabled = false;
+                    };
+                    img.onerror = () => {
+                        showToast("Error loading image.", 5000);
+                        cropButton.disabled = true;
+                        resetPointsButton.disabled = true;
+                    }
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        function initializePoints() {
+            const insetX = originalImageWidth * 0.20;
+            const insetY = originalImageHeight * 0.20;
+            points = [
+                { x: insetX, y: insetY }, // TL
+                { x: originalImageWidth - insetX, y: insetY }, // TR
+                { x: originalImageWidth - insetX, y: originalImageHeight - insetY }, // BR
+                { x: insetX, y: originalImageHeight - insetY }  // BL
+            ];
+        }
+
+        function drawSourceCanvas() {
+            if (!img) return;
+            sourceCtx.clearRect(0, 0, sourceCanvas.width, sourceCanvas.height);
+            sourceCtx.drawImage(img, 0, 0, displayImageWidth, displayImageHeight);
+
+            if (points.length !== 4) return;
+
+            sourceCtx.strokeStyle = 'rgba(0, 123, 255, 0.9)';
+            sourceCtx.lineWidth = 2;
+            sourceCtx.beginPath();
+            sourceCtx.moveTo(points[0].x * scaleFactor, points[0].y * scaleFactor);
+            for (let i = 1; i < points.length; i++) {
+                sourceCtx.lineTo(points[i].x * scaleFactor, points[i].y * scaleFactor);
+            }
+            sourceCtx.closePath();
+            sourceCtx.stroke();
+
+            points.forEach((p, index) => {
+                const displayX = p.x * scaleFactor;
+                const displayY = p.y * scaleFactor;
+                sourceCtx.beginPath();
+                sourceCtx.arc(displayX, displayY, HANDLE_RADIUS, 0, 2 * Math.PI);
+                sourceCtx.fillStyle = (index === activePointIndex) ? 'rgba(255, 0, 0, 0.8)' : 'rgba(0, 123, 255, 0.8)';
+                sourceCtx.fill();
+                sourceCtx.strokeStyle = 'white';
+                sourceCtx.lineWidth = 1;
+                sourceCtx.stroke();
+            });
+        }
+
+        // Canvas Interaction for Point Dragging
+        function getMousePos(canvas, evt) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = evt.clientX || (evt.touches && evt.touches[0] ? evt.touches[0].clientX : 0);
+            const clientY = evt.clientY || (evt.touches && evt.touches[0] ? evt.touches[0].clientY : 0);
+            return {
+                x: clientX - rect.left,
+                y: clientY - rect.top
+            };
+        }
+
+        function onCanvasMouseDown(e) {
+            if (!img || points.length !== 4) return;
+            e.preventDefault();
+            const pos = getMousePos(sourceCanvas, e);
+            
+            for (let i = 0; i < points.length; i++) {
+                const displayHandleX = points[i].x * scaleFactor;
+                const displayHandleY = points[i].y * scaleFactor;
+                const dx = pos.x - displayHandleX;
+                const dy = pos.y - displayHandleY;
+                if (dx * dx + dy * dy < INTERACTION_RADIUS * INTERACTION_RADIUS) {
+                    activePointIndex = i;
+                    sourceCanvas.style.cursor = 'grabbing';
+                    drawSourceCanvas();
+                    return;
+                }
+            }
+        }
+
+        function onCanvasMouseMove(e) {
+            if (activePointIndex === -1 || !img) return;
+            e.preventDefault();
+            const pos = getMousePos(sourceCanvas, e);
+
+            let newX = pos.x / scaleFactor;
+            let newY = pos.y / scaleFactor;
+
+            newX = Math.max(0, Math.min(newX, originalImageWidth));
+            newY = Math.max(0, Math.min(newY, originalImageHeight));
+            
+            points[activePointIndex].x = newX;
+            points[activePointIndex].y = newY;
+            
+            drawSourceCanvas();
+        }
+
+        function onCanvasMouseUp(e) {
+            if (activePointIndex === -1) return;
+            activePointIndex = -1;
+            sourceCanvas.style.cursor = 'grab';
+            drawSourceCanvas();
+        }
+        
+        sourceCanvas.addEventListener('mousedown', onCanvasMouseDown);
+        sourceCanvas.addEventListener('mousemove', onCanvasMouseMove);
+        sourceCanvas.addEventListener('mouseup', onCanvasMouseUp);
+        sourceCanvas.addEventListener('mouseleave', onCanvasMouseUp);
+        sourceCanvas.addEventListener('touchstart', onCanvasMouseDown, { passive: false });
+        sourceCanvas.addEventListener('touchmove', onCanvasMouseMove, { passive: false });
+        sourceCanvas.addEventListener('touchend', onCanvasMouseUp);
+        sourceCanvas.addEventListener('touchcancel', onCanvasMouseUp);
+
+
+        // Perspective Transformation Logic
+        function solveLinearSystem(A, b) {
+            const n = A.length;
+            for (let i = 0; i < n; i++) {
+                A[i].push(b[i]);
+            }
+
+            for (let i = 0; i < n; i++) {
+                let maxRow = i;
+                for (let k = i + 1; k < n; k++) {
+                    if (Math.abs(A[k][i]) > Math.abs(A[maxRow][i])) {
+                        maxRow = k;
+                    }
+                }
+                [A[i], A[maxRow]] = [A[maxRow], A[i]];
+
+                if (Math.abs(A[i][i]) < 1e-9) return null;
+
+                for (let k = i + 1; k < n + 1; k++) {
+                    A[i][k] /= A[i][i];
+                }
+                A[i][i] = 1;
+
+
+                // Eliminate other rows
+                for (let k = 0; k < n; k++) {
+                    if (k !== i) {
+                        const factor = A[k][i];
+                        for (let j = i; j < n + 1; j++) {
+                            A[k][j] -= factor * A[i][j];
+                        }
+                    }
+                }
+            }
+            
+            const x = new Array(n);
+            for (let i = 0; i < n; i++) {
+                x[i] = A[i][n];
+            }
+            return x;
+        }
+
+        function calculateHomography(srcPts, dstPts) {
+            if (srcPts.length !== 4 || dstPts.length !== 4) {
+                console.error("Need 4 source and 4 destination points.");
+                return null;
+            }
+
+            const M = [];
+            const b_vec = [];
+
+            for (let i = 0; i < 4; i++) {
+                const sx = srcPts[i].x;
+                const sy = srcPts[i].y;
+                const dx = dstPts[i].x;
+                const dy = dstPts[i].y;
+
+                M.push([sx, sy, 1, 0,  0,  0, -sx * dx, -sy * dx]);
+                b_vec.push(dx);
+                M.push([0,  0,  0, sx, sy, 1, -sx * dy, -sy * dy]);
+                b_vec.push(dy);
+            }
+            
+            const h_coeffs = solveLinearSystem(M.map(row => [...row]), [...b_vec]); // Pass copies
+
+            if (!h_coeffs) {
+                console.error("Could not solve for homography coefficients (matrix may be singular). Ensure points are not collinear.");
+                showToast("Error: Could not calculate perspective. Points might be collinear.", 5000);
+                return null;
+            }
+
+            // h = [h11, h12, h13, h21, h22, h23, h31, h32]
+            // Homography matrix H (3x3):
+            // [h11, h12, h13]
+            // [h21, h22, h23]
+            // [h31, h32,  1 ]
+            return [
+                h_coeffs[0], h_coeffs[1], h_coeffs[2],
+                h_coeffs[3], h_coeffs[4], h_coeffs[5],
+                h_coeffs[6], h_coeffs[7], 1
+            ];
+        }
+        
+        function invertMatrix3x3(m) {
+            const det = m[0] * (m[4] * m[8] - m[5] * m[7]) -
+                        m[1] * (m[3] * m[8] - m[5] * m[6]) +
+                        m[2] * (m[3] * m[7] - m[4] * m[6]);
+
+            if (Math.abs(det) < 1e-9) { // Check if determinant is close to zero
+                console.error("Matrix is singular, cannot invert.");
+                showToast("Error: Cannot invert transformation matrix.", 5000);
+                return null;
+            }
+
+            const invDet = 1.0 / det;
+            return [
+                (m[4] * m[8] - m[5] * m[7]) * invDet,
+                (m[2] * m[7] - m[1] * m[8]) * invDet,
+                (m[1] * m[5] - m[2] * m[4]) * invDet,
+                (m[5] * m[6] - m[3] * m[8]) * invDet,
+                (m[0] * m[8] - m[2] * m[6]) * invDet,
+                (m[2] * m[3] - m[0] * m[5]) * invDet,
+                (m[3] * m[7] - m[4] * m[6]) * invDet,
+                (m[1] * m[6] - m[0] * m[7]) * invDet,
+                (m[0] * m[4] - m[1] * m[3]) * invDet
+            ];
+        }
+
+        function transformPointPerspective(x, y, H_inv) {
+            const denominator = H_inv[6] * x + H_inv[7] * y + H_inv[8];
+            if (Math.abs(denominator) < 1e-9) return { x: -1, y: -1 }; // Avoid division by zero
+            
+            const srcX = (H_inv[0] * x + H_inv[1] * y + H_inv[2]) / denominator;
+            const srcY = (H_inv[3] * x + H_inv[4] * y + H_inv[5]) / denominator;
+            return { x: srcX, y: srcY };
+        }
+        
+        function getPixel(imageData, x, y) {
+            x = Math.max(0, Math.min(Math.floor(x), imageData.width - 1));
+            y = Math.max(0, Math.min(Math.floor(y), imageData.height - 1));
+            
+            const i = (y * imageData.width + x) * 4;
+            return [
+                imageData.data[i],
+                imageData.data[i+1],
+                imageData.data[i+2],
+                imageData.data[i+3]
+            ];
+        }
+
+        function bilinearInterpolate(imageData, x, y) {
+            const x_floor = Math.floor(x);
+            const y_floor = Math.floor(y);
+            const x_frac = x - x_floor;
+            const y_frac = y - y_floor;
+
+            // Check if any of the 4 points are outside bounds
+            if (x_floor < 0 || x_floor + 1 >= imageData.width || y_floor < 0 || y_floor + 1 >= imageData.height) {
+                return getPixel(imageData, x, y);
+            }
+
+            const p00 = getPixel(imageData, x_floor, y_floor);
+            const p10 = getPixel(imageData, x_floor + 1, y_floor);
+            const p01 = getPixel(imageData, x_floor, y_floor + 1);
+            const p11 = getPixel(imageData, x_floor + 1, y_floor + 1);
+
+            const out = [0,0,0,0];
+            for (let i = 0; i < 4; i++) { // R, G, B, A
+                const c0 = p00[i] * (1 - x_frac) + p10[i] * x_frac;
+                const c1 = p01[i] * (1 - x_frac) + p11[i] * x_frac;
+                out[i] = Math.round(c0 * (1 - y_frac) + c1 * y_frac);
+            }
+            return out;
+        }
+
+        async function warpPerspective() {
+            if (!img || points.length !== 4) {
+                showToast("Please upload an image and define crop points.", 3000);
+                return;
+            }
+            
+            loader.style.display = 'block'; // Show loader
+            cropButton.disabled = true;
+            resetPointsButton.disabled = true;
+
+            await new Promise(resolve => setTimeout(resolve, 50)); 
+
+            try {
+                const targetWidth = parseInt(outputWidthInput.value);
+                const targetHeight = parseInt(outputHeightInput.value);
+
+                if (isNaN(targetWidth) || isNaN(targetHeight) || targetWidth <= 0 || targetHeight <= 0) {
+                    showToast("Invalid output dimensions.", 3000);
+                    throw new Error("Invalid output dimensions.");
+                }
+
+                outputCanvas.width = targetWidth;
+                outputCanvas.height = targetHeight;
+
+                const srcPts = points; 
+                
+                const dstPts = [
+                    { x: 0, y: 0 },
+                    { x: targetWidth, y: 0 },
+                    { x: targetWidth, y: targetHeight },
+                    { x: 0, y: targetHeight }
+                ];
+
+                const H = calculateHomography(srcPts, dstPts);
+                if (!H) throw new Error("Homography calculation failed.");
+
+                const H_inv = invertMatrix3x3(H);
+                if (!H_inv) throw new Error("Matrix inversion failed.");
+
+                // Get image data from original full-resolution image (not the displayed one)
+                // To do this, we need to draw the original image to a temporary canvas
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = originalImageWidth;
+                tempCanvas.height = originalImageHeight;
+                const tempCtx = tempCanvas.getContext('2d');
+                tempCtx.drawImage(img, 0, 0, originalImageWidth, originalImageHeight);
+                const sourceImageData = tempCtx.getImageData(0, 0, originalImageWidth, originalImageHeight);
+                
+                const outputImageData = outputCtx.createImageData(targetWidth, targetHeight);
+
+                for (let y_dst = 0; y_dst < targetHeight; y_dst++) {
+                    for (let x_dst = 0; x_dst < targetWidth; x_dst++) {
+                        const srcCoords = transformPointPerspective(x_dst, y_dst, H_inv);
+                        
+                        let color;
+                        if (srcCoords.x < 0 || srcCoords.y < 0 || srcCoords.x >= originalImageWidth || srcCoords.y >= originalImageHeight) {
+                            color = [0, 0, 0, 0]; // Transparent black for pixels outside source
+                        } else {
+                            color = bilinearInterpolate(sourceImageData, srcCoords.x, srcCoords.y);
+                        }
+                        
+                        const idx = (y_dst * targetWidth + x_dst) * 4;
+                        outputImageData.data[idx]     = color[0]; // R
+                        outputImageData.data[idx + 1] = color[1]; // G
+                        outputImageData.data[idx + 2] = color[2]; // B
+                        outputImageData.data[idx + 3] = color[3]; // A
+                    }
+                }
+                outputCtx.putImageData(outputImageData, 0, 0);
+                showToast("Image cropped successfully!", 3000);
+
+            } catch (error) {
+                console.error("Cropping error:", error);
+                if (error.message && !toast.classList.contains('show')) { // Avoid duplicate toasts if already shown
+                    showToast(`Error: ${error.message}`, 5000);
+                } else if (!toast.classList.contains('show')) {
+                    showToast("An unknown error occurred during cropping.", 5000);
+                }
+                // Clear output canvas on error
+                outputCtx.fillStyle = '#e5e7eb'; // bg-gray-200
+                outputCtx.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
+
+            } finally {
+                loader.style.display = 'none'; // Hide loader
+                cropButton.disabled = (img === null);
+                resetPointsButton.disabled = (img === null);
+            }
+        }
+
+        cropButton.addEventListener('click', warpPerspective);
+        resetPointsButton.addEventListener('click', () => {
+            if (img) {
+                initializePoints();
+                drawSourceCanvas();
+                // Clear output canvas
+                outputCtx.fillStyle = '#e5e7eb'; // bg-gray-200
+                outputCtx.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
+                showToast("Points reset.", 2000);
+            }
+        });
+
+        function setupInitialCanvas(canvas, ctx) {
+            canvas.width = canvas.parentElement.clientWidth > 0 ? canvas.parentElement.clientWidth : 400;
+            canvas.height = 300;
+            ctx.fillStyle = '#e5e7eb'; // bg-gray-200
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#a0aec0'; // text-gray-500
+            ctx.textAlign = 'center';
+            ctx.font = '16px Inter';
+            if (canvas.id === "sourceCanvas") {
+                 ctx.fillText('Upload an image to begin', canvas.width / 2, canvas.height / 2);
+            } else {
+                 ctx.fillText('Output will appear here', canvas.width / 2, canvas.height / 2);
+            }
+        }
+        
+        window.addEventListener('load', () => {
+            setupInitialCanvas(sourceCanvas, sourceCtx);
+            setupInitialCanvas(outputCanvas, outputCtx);
+        });
+        window.addEventListener('resize', () => {
+            if (!img) {
+                setupInitialCanvas(sourceCanvas, sourceCtx);
+                setupInitialCanvas(outputCanvas, outputCtx);
+            } else {
+                const maxDisplayWidth = sourceCanvas.parentElement.clientWidth > 0 ? sourceCanvas.parentElement.clientWidth : 500;
+                scaleFactor = maxDisplayWidth / originalImageWidth;
+                if (originalImageHeight * scaleFactor > 400) {
+                     scaleFactor = 400 / originalImageHeight;
+                }
+                if (scaleFactor > 1) scaleFactor = 1;
+
+                displayImageWidth = originalImageWidth * scaleFactor;
+                displayImageHeight = originalImageHeight * scaleFactor;
+
+                sourceCanvas.width = displayImageWidth;
+                sourceCanvas.height = displayImageHeight;
+                drawSourceCanvas();
+            }
+        });
+
+    </script>
+</body>
+</html>
