@@ -122,6 +122,12 @@ textarea {
     }
 }
 
+.realLabel {
+        opacity: .5;
+        font-size: 12px;
+        text-transform: uppercase;
+    }
+
 .range-wrapper {
     position: relative;
     height: 6px;
@@ -161,4 +167,39 @@ textarea {
         max-height: 100%;
         box-shadow: 0 3px 10px rgba(0, 0, 0, 0.489);
     }
+}
+
+#effectlist {
+    margin-top: 5px;
+}
+
+.effectinlist {
+    display: flex
+;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px;
+    border-radius: 5px;
+    cursor: grab;
+
+    &:hover {
+    background-color: #36393f;
+    }
+
+    &:active {
+        cursor: grabbing;
+    }
+    &>.handle {
+        font-size: 15px;
+    }
+}
+
+
+.effectinlist.dragging {
+    opacity: 0.5;
+}
+
+.effectinlist.over {
+    border: 2px dashed #007bff;
 }

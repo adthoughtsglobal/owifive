@@ -40,7 +40,7 @@ export function rangeInit(selector = 'input[type=range]') {
                 const snapThreshold = (max - min) * 0.02;
                 let newVal = rawVal;
 
-                if (Math.abs(rawVal - center) < snapThreshold) {
+                if (!original.hasAttribute('data-nosnap') && Math.abs(rawVal - center) < snapThreshold) {
                     newVal = center;
                 }
 
@@ -66,14 +66,15 @@ export function rangeInit(selector = 'input[type=range]') {
         }
 
         const observer = new MutationObserver(() => {
-            update(+original.value || center);
+            update(Number.isFinite(+original.value) ? +original.value : center);
         });
-
-        observer.observe(original, { attributes: true, attributeFilter: ['value'] });
 
         original.addEventListener('input', () => {
-            update(+original.value || center);
+            update(Number.isFinite(+original.value) ? +original.value : center);
         });
+
+
+        observer.observe(original, { attributes: true, attributeFilter: ['value'] });
 
         original.style.display = 'none';
         original.parentNode.insertBefore(wrapper, original.nextSibling);

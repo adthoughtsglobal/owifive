@@ -46,6 +46,7 @@
             background-color: #fff;
             max-width: 100%;
             height: auto;
+    filter: blur(5px) contrast(1.5);
         }
         .info-text {
             margin-bottom: 10px;
@@ -61,13 +62,14 @@
             user-select: none;
         }
     </style>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body>
     <div id="controlsContainer">
         <h1>Image Depth Parallax (Focus-Based)</h1>
         <p class="info-text">
             Upload an image. Sharpest areas stay fixed (mid-ground).
-            Blurred areas create depth. Use the toggle to change how blur is interpreted.
+            Blurred areas create depth. Edge blur adapts to image content.
         </p>
         <input type="file" id="imageUpload" accept="image/*">
         <div class="settings">
@@ -83,7 +85,9 @@
         // --- Configuration ---
         const BLOCK_SIZE = 16;
         const MAX_PARALLAX_OFFSET = 20; // Max displacement for most out-of-focus elements
-        const EDGE_BLUR_AMOUNT = '0.75px'; // Soften block edges
+        const MIN_DYNAMIC_BLUR_PX = 0.3;  // Minimum edge blur for sharp images
+        const MAX_DYNAMIC_BLUR_PX = 1.0;  // Maximum edge blur for blurry images
+
 
         // --- Global Variables ---
         let originalImage = null;
@@ -100,6 +104,9 @@
         let currentMouseY = 0;
         let animationFrameId = null;
         let isProcessing = false;
+
+        let averageImageDeviation = 0.5; // Average deviation from focus for the current image (0-1)
+        let dynamicEdgeBlurAmount = `${(MIN_DYNAMIC_BLUR_PX + MAX_DYNAMIC_BLUR_PX) / 2}px`; // Initial/default dynamic blur
 
         // --- Initialization ---
         window.onload = () => {
@@ -202,7 +209,6 @@
 
             statusDiv.textContent = 'Processing: Calculating sharpness...';
             await yieldToEventLoop();
-            // This function now just returns blocks with raw sharpness
             const blocksWithSharpness = calculateAllBlockSharpness(grayscaleImageData, imgElement.width, imgElement.height);
 
             if (blocksWithSharpness.length === 0) {
@@ -210,10 +216,9 @@
                 return;
             }
             
-            statusDiv.textContent = 'Processing: Normalizing depth (deviation from focus)...';
+            statusDiv.textContent = 'Processing: Normalizing depth & calculating average blur...';
             await yieldToEventLoop();
-            // This function now calculates deviationFromFocus and stores it in imageBlocks
-            assignDeviationFromFocus(blocksWithSharpness);
+            assignDeviationFromFocus(blocksWithSharpness); // This now also calculates dynamicEdgeBlurAmount
 
             statusDiv.textContent = 'Processing complete. Move mouse over image.';
         }
@@ -246,7 +251,7 @@
         }
 
         function calculateAllBlockSharpness(grayscaleImageData, imageWidth, imageHeight) {
-            const blocks = []; // Will store { originalX, originalY, width, height, sharpness }
+            const blocks = [];
             for (let y = 0; y < imageHeight; y += BLOCK_SIZE) {
                 for (let x = 0; x < imageWidth; x += BLOCK_SIZE) {
                     const blockActualWidth = Math.min(BLOCK_SIZE, imageWidth - x);
@@ -256,7 +261,7 @@
                         blocks.push({
                             originalX: x, originalY: y,
                             width: blockActualWidth, height: blockActualHeight,
-                            sharpness: 0 // Treat tiny blocks as not sharp
+                            sharpness: 0
                         });
                         continue;
                     }
@@ -286,7 +291,7 @@
             if (w < 3 || h < 3) return 0;
 
             const laplacianResults = [];
-            for (let r = 1; r < h - 1; r++) { // Iterate r for row, c for column
+            for (let r = 1; r < h - 1; r++) {
                 for (let c = 1; c < w - 1; c++) {
                     const centerIdx = r * w + c;
                     const topIdx = (r - 1) * w + c;
@@ -316,12 +321,16 @@
         function assignDeviationFromFocus(blocksWithSharpness) {
             if (blocksWithSharpness.length === 0) {
                 imageBlocks = [];
+                averageImageDeviation = 0.5; // Reset to default
+                dynamicEdgeBlurAmount = `${(MIN_DYNAMIC_BLUR_PX + MAX_DYNAMIC_BLUR_PX) / 2}px`; // Reset to default
                 return;
             }
 
             const sharpnessValues = blocksWithSharpness.map(b => b.sharpness).filter(s => isFinite(s));
             if (sharpnessValues.length === 0) {
-                 imageBlocks = blocksWithSharpness.map(b => ({...b, deviationFromFocus: 0.5 })); // Default if no valid sharpness
+                 imageBlocks = blocksWithSharpness.map(b => ({...b, deviationFromFocus: 0.5 }));
+                 averageImageDeviation = 0.5; // Default if no valid sharpness
+                 dynamicEdgeBlurAmount = `${(MIN_DYNAMIC_BLUR_PX + MAX_DYNAMIC_BLUR_PX) / 2}px`;
                  return;
             }
 
@@ -329,19 +338,18 @@
             let maxSharpness = Math.max(...sharpnessValues);
             
             imageBlocks = blocksWithSharpness.map(block => {
-                let deviationFromFocus = 0; // Default for sharpest or if range is zero
+                let deviationFromFocus = 0; 
 
-                if (maxSharpness - minSharpness > 0.00001) { // Avoid division by zero if all sharpness is effectively the same
+                if (maxSharpness - minSharpness > 0.00001) { 
                     if (!isFinite(block.sharpness)) {
-                         deviationFromFocus = 1.0; // Treat non-finite sharpness as maximally blurred
+                         deviationFromFocus = 1.0; 
                     } else {
                         const normalizedSharpness = (block.sharpness - minSharpness) / (maxSharpness - minSharpness);
-                        deviationFromFocus = 1.0 - normalizedSharpness; // 0 for sharpest, 1 for blurriest
+                        deviationFromFocus = 1.0 - normalizedSharpness; 
                     }
-                } else if (maxSharpness === 0 && minSharpness === 0) { // If image is completely flat black (all sharpness 0)
-                    deviationFromFocus = 1.0; // Treat as maximally blurred uniformly
+                } else if (maxSharpness === 0 && minSharpness === 0) { 
+                    deviationFromFocus = 1.0; 
                 }
-                // else, if all blocks have the same non-zero sharpness, deviationFromFocus remains 0 (all "in focus" relative to each other)
 
                 return {
                     originalX: block.originalX,
@@ -351,6 +359,19 @@
                     deviationFromFocus: deviationFromFocus
                 };
             });
+
+            // Calculate average deviation for the whole image
+            if (imageBlocks.length > 0) {
+                const totalDeviation = imageBlocks.reduce((sum, block) => sum + block.deviationFromFocus, 0);
+                averageImageDeviation = totalDeviation / imageBlocks.length;
+
+                let calculatedBlurPx = MIN_DYNAMIC_BLUR_PX + averageImageDeviation * (MAX_DYNAMIC_BLUR_PX - MIN_DYNAMIC_BLUR_PX);
+                calculatedBlurPx = Math.max(MIN_DYNAMIC_BLUR_PX, Math.min(calculatedBlurPx, MAX_DYNAMIC_BLUR_PX)); // Clamp
+                dynamicEdgeBlurAmount = `${calculatedBlurPx.toFixed(2)}px`;
+            } else {
+                averageImageDeviation = 0.5; // Default
+                dynamicEdgeBlurAmount = `${((MIN_DYNAMIC_BLUR_PX + MAX_DYNAMIC_BLUR_PX) / 2).toFixed(2)}px`; // Default
+            }
         }
 
         // --- Rendering ---
@@ -369,32 +390,18 @@
             const centerX = offscreenCanvas.width / 2;
             const centerY = offscreenCanvas.height / 2;
             
-            // Normalized mouse direction from center (-1 to 1)
             const mouseDirectionX = centerX === 0 ? 0 : (mouseX - centerX) / centerX;
             const mouseDirectionY = centerY === 0 ? 0 : (mouseY - centerY) / centerY;
 
             const interpretBlurAsNear = invertDepthToggle.checked;
 
             imageBlocks.forEach(block => {
-                // block.deviationFromFocus: 0 for sharpest (in-focus), 1 for blurriest (most out-of-focus)
                 const depthEffectMagnitude = block.deviationFromFocus;
-                
-                let depthSign = -1; // Default: blur is far (moves opposite to foreground)
+                let depthSign = -1; 
                 if (interpretBlurAsNear) {
-                    depthSign = 1;  // Blur is near (moves with foreground)
+                    depthSign = 1;
                 }
-
-                // finalParallaxFactor: 
-                // - In-focus (deviation=0) => 0 (no displacement)
-                // - Max deviation (blur=far, sign=-1) => -1 * MAX_PARALLAX_OFFSET
-                // - Max deviation (blur=near, sign=1) =>  1 * MAX_PARALLAX_OFFSET
                 const finalParallaxFactor = depthEffectMagnitude * depthSign;
-
-                // Displacement:
-                // Near objects (positive finalParallaxFactor) move more in the direction of mouse movement relative to image center.
-                // Far objects (negative finalParallaxFactor) move in the opposite direction.
-                // Standard parallax: If mouse moves right, near objects appear to move left relative to distant background.
-                // So, displacement should be negative of mouseDirection for near objects.
                 const offsetX = -mouseDirectionX * finalParallaxFactor * MAX_PARALLAX_OFFSET;
                 const offsetY = -mouseDirectionY * finalParallaxFactor * MAX_PARALLAX_OFFSET;
 
@@ -411,7 +418,7 @@
             });
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.filter = `blur(${EDGE_BLUR_AMOUNT})`;
+            ctx.filter = `blur(${dynamicEdgeBlurAmount})`; // Use the dynamically calculated blur
             ctx.drawImage(offscreenCanvas, 0, 0);
             ctx.filter = 'none';
         }

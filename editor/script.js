@@ -32,7 +32,6 @@ Object.keys(eff.effectslib).forEach(key => {
 if (sourceImage.complete) {
     sourceImage.onload();
 }
-
 function renderEffectTools(key, ele) {
     Array.from(document.getElementsByClassName("singular_effect_btn")).forEach((x) => {
         x.classList.remove("active");
@@ -65,6 +64,10 @@ function renderEffectTools(key, ele) {
             input.step = meta.step ?? 1;
             input.value = meta.default ?? 0;
 
+            if (meta.nosnap) {
+                input.setAttribute("data-nosnap", "");
+            }
+
             input.addEventListener("input", function () {
                 var value = parseFloat(this.value);
 
@@ -75,10 +78,8 @@ function renderEffectTools(key, ele) {
                     eff.state.appliedEffects.push({ categoryKey: key, effectKey: subKey, value: value });
                 }
 
-
                 renderImage();
             });
-
 
             container.appendChild(input);
 
@@ -87,7 +88,6 @@ function renderEffectTools(key, ele) {
             btn.textContent = meta.label || subKey;
 
             btn.addEventListener("click", function () {
-
                 eff.state.appliedEffects.push({ categoryKey: key, effectKey: subKey });
                 renderImage();
             });
@@ -95,6 +95,7 @@ function renderEffectTools(key, ele) {
             container.appendChild(btn);
         }
     });
+
     rangeInit();
 }
 let lastRenderTime = 0;
@@ -122,4 +123,42 @@ function renderImage() {
             effectFunc();
         }
     });
+    renderEffectsList()
 }
+
+function renderEffectsList() {
+    const list = document.getElementById('effectlist');
+    list.innerHTML = '';
+    eff.state.appliedEffects.forEach((effect, index) => {
+        const item = document.createElement('div');
+        item.className = 'effectinlist';
+        item.setAttribute('data-index', index);
+
+        const label = document.createElement('div');
+        label.className = 'label';
+        label.textContent = effect.effectKey;
+
+        const handle = document.createElement('div');
+        handle.className = 'handle msr';
+        handle.textContent = 'drag_indicator';
+
+        item.appendChild(label);
+        item.appendChild(handle);
+        list.appendChild(item);
+    });
+}
+
+Sortable.create(document.getElementById('effectlist'), {
+    handle: '.handle',
+    animation: 150,
+    onEnd: function (evt) {
+        const newOrder = Array.from(document.querySelectorAll('.effectinlist'))
+            .map(el => parseInt(el.getAttribute('data-index')));
+
+        const reordered = newOrder.map(i => eff.state.appliedEffects[i]);
+        eff.state.appliedEffects = reordered;
+
+        renderEffectsList();
+        renderImage();
+    }
+});

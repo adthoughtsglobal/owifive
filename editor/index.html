@@ -12,6 +12,7 @@
     <meta name="description" content="">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="style.css">
+    <script src="./assets/sortable.js"></script>
 </head>
 
 <body>
@@ -24,7 +25,13 @@
     </div>
     <div class="panels">
         <div class="editor_tools panel">
-
+            <div class="realLabel">Applied effects</div>
+            <div id="effectlist">
+                <div class="effectinlist">
+                    <div class="label">Blur</div>
+                    <div class="handle msr">drag_indicator</div>
+                </div>
+            </div>
         </div>
         <div class="output_panel">
             <canvas id="canvas"></canvas>
