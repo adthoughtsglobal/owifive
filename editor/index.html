@@ -21,7 +21,7 @@
         <![endif]-->
     <div class="main_nav">
         <button>File</button>
-        <button>Effects</button>
+        <button>Settings</button>
     </div>
     <div class="panels">
         <div class="editor_tools panel">
@@ -48,6 +48,26 @@
             </div>
         </div>
         <img id="source" src="assets/image.png" style="display:none;"/>
+    </div>
+
+    <div class="dialog_window" id="settingswindow">
+        <div class="content">
+            <div class="header">
+            <div class="title">Settings</div>
+            <div class="clbtn msr">done</div>
+        </div>
+        <div id="settings_list">
+            <div class="setting">
+            <div class="text_part">
+                <div class="title">Output FPS</div>
+                <p>Configure how frequently the output gets rendered. Affects performance.</p>
+            </div>
+            <input id="fps_cap_inp" placeholder="30" value="30">
+        </div>
+        </div>
+        
+        </div>
+        
     </div>
 
     <script type="module" src="script.js" async defer></script>

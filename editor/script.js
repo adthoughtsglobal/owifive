@@ -6,27 +6,27 @@ sourceImage.onload = () => {
     rangeInit();
     eff.initializeCanvas();
 
-const effectsGrid = document.querySelector('.effects_grid');
+    const effectsGrid = document.querySelector('.effects_grid');
 
-Object.keys(eff.effectslib).forEach(key => {
-    let singularEffectBtn = document.createElement('div');
-    singularEffectBtn.className = 'singular_effect_btn';
+    Object.keys(eff.effectslib).forEach(key => {
+        let singularEffectBtn = document.createElement('div');
+        singularEffectBtn.className = 'singular_effect_btn';
 
-    let iconDiv = document.createElement('div');
-    iconDiv.className = 'icon msr';
-    iconDiv.textContent = eff.effectslib[key].icon;
+        let iconDiv = document.createElement('div');
+        iconDiv.className = 'icon msr';
+        iconDiv.textContent = eff.effectslib[key].icon;
 
-    let labelDiv = document.createElement('div');
-    labelDiv.className = 'label';
-    labelDiv.textContent = key.charAt(0).toUpperCase() + key.slice(1);
+        let labelDiv = document.createElement('div');
+        labelDiv.className = 'label';
+        labelDiv.textContent = key.charAt(0).toUpperCase() + key.slice(1);
 
-    singularEffectBtn.appendChild(iconDiv);
-    singularEffectBtn.appendChild(labelDiv);
-    singularEffectBtn.addEventListener("click", () => {
-        renderEffectTools(key, singularEffectBtn);
-    })
-    effectsGrid.appendChild(singularEffectBtn);
-});
+        singularEffectBtn.appendChild(iconDiv);
+        singularEffectBtn.appendChild(labelDiv);
+        singularEffectBtn.addEventListener("click", () => {
+            renderEffectTools(key, singularEffectBtn);
+        })
+        effectsGrid.appendChild(singularEffectBtn);
+    });
 };
 
 if (sourceImage.complete) {
@@ -97,12 +97,15 @@ function renderEffectTools(key, ele) {
     });
 
     rangeInit();
-}
+} 
+
 let lastRenderTime = 0;
+let fps = 30;
+    let frameInterval = 1000 / fps;
 
 function renderImage() {
     const now = Date.now();
-    if (now - lastRenderTime < 300) return;
+    if (now - lastRenderTime < frameInterval) return;
     lastRenderTime = now;
 
     if (!eff.state.originalImage) return;

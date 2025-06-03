@@ -35,6 +35,12 @@ body {
     font-family: "IBM Plex Sans", sans-serif;
 }
 
+:root {
+    --dull-bg: #111113;
+    --main-bg: #18191b;
+    --high-bg: #33363b;
+}
+
 button,
 input,
 textarea {
@@ -95,11 +101,13 @@ textarea {
     gap: 5px;
     width: fit-content;
     aspect-ratio: 1 / 1;
+
     &:hover {
         background-color: #28292a;
     }
+
     &.active {
-    background-color: #33363b;
+        background-color: #33363b;
     }
 }
 
@@ -123,10 +131,10 @@ textarea {
 }
 
 .realLabel {
-        opacity: .5;
-        font-size: 12px;
-        text-transform: uppercase;
-    }
+    opacity: .5;
+    font-size: 12px;
+    text-transform: uppercase;
+}
 
 .range-wrapper {
     position: relative;
@@ -155,9 +163,8 @@ textarea {
 }
 
 .output_panel {
-        flex: 3;
-    display: flex
-;
+    flex: 3;
+    display: flex;
     align-items: center;
     justify-content: center;
     padding: 10px;
@@ -174,8 +181,7 @@ textarea {
 }
 
 .effectinlist {
-    display: flex
-;
+    display: flex;
     flex-direction: row;
     justify-content: space-between;
     align-items: center;
@@ -184,12 +190,13 @@ textarea {
     cursor: grab;
 
     &:hover {
-    background-color: #36393f;
+        background-color: #36393f;
     }
 
     &:active {
         cursor: grabbing;
     }
+
     &>.handle {
         font-size: 15px;
     }
@@ -202,4 +209,75 @@ textarea {
 
 .effectinlist.over {
     border: 2px dashed #007bff;
+}
+
+.dialog_window {
+    display: flex;
+    position: absolute;
+    align-items: flex-start;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    background: #00000033;
+
+    & .content {
+        background-color: var(--main-bg);
+        margin-top: 1em;
+        padding: 1em;
+        border-radius: 5px;
+        border: 1px solid #393b41;
+        max-height: 300px;
+        overflow-y: auto;
+        box-shadow: 0 3px 10px #000000a6;
+
+        &>.header {
+            display: flex;
+            flex-direction: row;
+            flex-wrap: nowrap;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: .5em;
+
+            & .clbtn {
+                font-size: 15px;
+                padding: 3px;
+                display: flex;
+                border-radius: 5px;
+                cursor: pointer;
+                background-color: var(--high-bg);
+            }
+        }
+    }
+
+    .setting {
+            display: flex;
+            padding-top: .5em;
+            flex-direction: row;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: nowrap;
+            gap: 1em;
+            max-width: 350px;
+            border-top: 1px solid var(--high-bg);
+
+            &>.text_part {
+                flex: 1;
+
+                &>p{
+                    margin: 0;
+                    opacity: .5;
+                    font-size: small;
+                    margin-top: 5px;
+                }
+            }
+
+            &>input {
+                                min-width: 0;
+                width: 32px;
+                background: var(--dull-bg);
+                padding: .5em;
+                border-radius: 5px;
+                text-align: center;
+            }
+        }
 }
