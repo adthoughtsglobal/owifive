@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Input Calculator</title>
+    <style>
+        body {
+    background-color: #f0f2f5;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+    font-family: 'Arial', sans-serif;
+}
+
+.calculator-container {
+    position: relative;
+    width: 90%;
+    max-width: 600px;
+}
+
+#expression-input {
+    width: 100%;
+    padding: 25px;
+    font-size: 2rem;
+    border-radius: 15px;
+    border: 2px solid #d9d9d9;
+    background-color: #ffffff;
+    color: #333;
+    outline: none;
+    transition: border-color 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
+    box-sizing: border-box;
+}
+
+#expression-input:focus {
+    border-color: #8c7ae6;
+    box-shadow: 0 0 15px rgba(140, 122, 230, 0.2);
+}
+
+#result-overlay {
+    position: absolute;
+    top: 50%;
+    right: 30px;
+    transform: translateY(-50%);
+    font-size: 3.5rem;
+    font-weight: bold;
+    color: #8c7ae6;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease-in-out;
+}
+    </style>
+</head>
+<body>
+    <div class="calculator-container">
+        <input type="text" id="expression-input" placeholder="Type a calculation..." autocomplete="off">
+        <div id="result-overlay"></div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/12.4.1/math.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+    const expressionInput = document.getElementById('expression-input');
+    const resultOverlay = document.getElementById('result-overlay');
+
+    expressionInput.addEventListener('input', handleInput);
+
+    function handleInput() {
+        let expression = expressionInput.value;
+
+        if (expression.trim() === '') {
+            resultOverlay.style.opacity = '0';
+            return;
+        }
+
+        try {
+            // Attempt to evaluate the expression as is
+            const result = math.evaluate(expression);
+            displayResult(result);
+        } catch (error) {
+            // If direct evaluation fails, try to predict a probable answer
+            const probableExpression = getProbableExpression(expression);
+            if (probableExpression) {
+                try {
+                    const probableResult = math.evaluate(probableExpression);
+                    displayResult(probableResult, true);
+                } catch (e) {
+                    resultOverlay.style.opacity = '0';
+                }
+            } else {
+                resultOverlay.style.opacity = '0';
+            }
+        }
+    }
+
+    function displayResult(result, isProbable = false) {
+        if (typeof result !== 'function' && isFinite(result)) {
+            resultOverlay.textContent = `= ${Math.round(result * 10000) / 10000}`;
+            resultOverlay.style.opacity = isProbable ? '0.5' : '1';
+        } else {
+            resultOverlay.style.opacity = '0';
+        }
+    }
+
+    function getProbableExpression(expression) {
+        // Handle trailing operators by adding the last valid number
+        const lastChar = expression.trim().slice(-1);
+        if (['+', '-', '*', '/'].includes(lastChar)) {
+            const tokens = expression.trim().slice(0, -1).split(/[\s()*/+-]+/);
+            const lastNumber = tokens.filter(t => !isNaN(parseFloat(t))).pop();
+            if (lastNumber) {
+                return expression + lastNumber;
+            }
+        }
+
+        // Handle open parentheses
+        const openParenCount = (expression.match(/\(/g) || []).length;
+        const closeParenCount = (expression.match(/\)/g) || []).length;
+        if (openParenCount > closeParenCount) {
+            return expression + ')'.repeat(openParenCount - closeParenCount);
+        }
+
+        return null;
+    }
+});
+    </script>
+</body>
+</html>
