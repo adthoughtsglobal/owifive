@@ -20,9 +20,18 @@
             <p class="browsehappy">You are using an <strong>outdated</strong> browser. Please <a href="#">upgrade your browser</a> to improve your experience.</p>
         <![endif]-->
     <div class="main_nav">
+    <div class="dropdown">
         <button>File</button>
-        <button>Settings</button>
+        <div class="dropdown-content">
+            <a>Open</a>
+            <a>Save As</a>
+        </div>
     </div>
+    <div class="dropdown">
+        <button onclick="toggleSettings()">Settings</button>
+    </div>
+</div>
+
     <div class="panels">
         <div class="editor_tools panel">
             <div class="realLabel">Applied effects</div>
@@ -54,7 +63,7 @@
         <div class="content">
             <div class="header">
             <div class="title">Settings</div>
-            <div class="clbtn msr">done</div>
+            <div class="clbtn msr" onclick="window.toggleSettings()">done</div>
         </div>
         <div id="settings_list">
             <div class="setting">
@@ -62,15 +71,15 @@
                 <div class="title">Output FPS</div>
                 <p>Configure how frequently the output gets rendered. Affects performance.</p>
             </div>
-            <input id="fps_cap_inp" placeholder="30" value="30">
+            <input settingdata="result_fps" class="singular_setting" placeholder="30" value="30">
         </div>
         </div>
         
         </div>
         
     </div>
+<script type="module" src="script.js"></script>
 
-    <script type="module" src="script.js" async defer></script>
 </body>
 
 </html>

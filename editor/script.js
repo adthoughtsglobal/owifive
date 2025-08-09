@@ -97,13 +97,12 @@ function renderEffectTools(key, ele) {
     });
 
     rangeInit();
-} 
+}
 
 let lastRenderTime = 0;
-let fps = 30;
-    let frameInterval = 1000 / fps;
 
 function renderImage() {
+    let frameInterval = 1000 / GSetting.result_fps;
     const now = Date.now();
     if (now - lastRenderTime < frameInterval) return;
     lastRenderTime = now;
@@ -165,3 +164,33 @@ Sortable.create(document.getElementById('effectlist'), {
         renderImage();
     }
 });
+
+var settingsmodal = document.getElementById("settingswindow");
+settingsmodal.addEventListener("click", (e) => {
+    if (!e.target.closest('.content')) {
+        settingsmodal.style.display = "none";
+        settingsopen = 0;
+    }
+});
+
+var settingsopen = 0;
+window.toggleSettings = function () {
+    if (settingsopen) {
+        settingsmodal.style.display = "none";
+        settingsopen = 0;
+        applySettings();
+    } else {
+        settingsmodal.style.display = "flex";
+        settingsopen = 1;
+    }
+}
+window.GSetting = {
+    "result_fps": 30
+}
+function applySettings() {
+    var elements = document.querySelectorAll(".singular_setting");
+    elements.forEach((x) => {
+        let key = x.getAttribute("settingdata");
+        GSetting[key] = parseInt(x.value);
+    })
+}

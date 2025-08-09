@@ -39,6 +39,7 @@ body {
     --dull-bg: #111113;
     --main-bg: #18191b;
     --high-bg: #33363b;
+    --box-crisp: 1px solid #393b41;
 }
 
 button,
@@ -53,6 +54,17 @@ textarea {
     font-size: inherit;
 }
 
+@keyframes showUp {
+    0% {
+        transform: translateY(3px);
+        opacity: 0;
+    }
+    100% {
+        transform: translateY(0px);
+        opacity: 1;
+    }
+}
+
 .main_nav {
     display: flex;
     flex-direction: row;
@@ -60,28 +72,68 @@ textarea {
     padding: 5px;
     background-color: #18191b;
 
-    &>button {
-        padding: 5px 8px;
-        border-radius: 5px;
 
-        &:hover {
+    &>.dropdown {
+        position: relative;
+
+        &:hover > button {
             background-color: #28292a;
         }
+
+        &>button {
+            padding: 5px 8px;
+            border-radius: 5px;
+
+            &:hover {
+                background-color: #28292a;
+            }
+        }
     }
+
+    & .dropdown-content {
+        position: absolute;
+        animation: showUp .2s;
+        box-shadow: 0 5px 10px #0000003a;
+        top: 100%;
+        left: 0;
+        display: none;
+        flex-direction: column;
+        background: var(--main-bg);
+        border: var(--box-crisp);
+        border-radius: 5px;
+        min-width: 100px;
+        z-index: 1;
+        overflow: hidden;
+
+        &>a {
+            all: unset;
+            padding: 5px 8px;
+            border-radius: 0px;
+
+            &:hover {
+                background-color: #28292a;
+            }
+        }
+    }
+
+    & .dropdown:hover .dropdown-content {
+        display: flex;
+    }
+
 }
 
 .panels {
     display: flex;
     flex-direction: row;
     flex: 1;
-    border-top: 1px solid #393b41;
+    border-top: var(--box-crisp);
     height: 0;
 
     &>.panel {
         background-color: #18191b;
         padding: 10px;
-        border-left: 1px solid #393b41;
-        border-right: 1px solid #393b41;
+        border-left: var(--box-crisp);
+        border-right: var(--box-crisp);
         flex: 1;
     }
 }
@@ -212,7 +264,7 @@ textarea {
 }
 
 .dialog_window {
-    display: flex;
+    display: none;
     position: absolute;
     align-items: flex-start;
     justify-content: center;
@@ -225,7 +277,7 @@ textarea {
         margin-top: 1em;
         padding: 1em;
         border-radius: 5px;
-        border: 1px solid #393b41;
+        border: var(--box-crisp);
         max-height: 300px;
         overflow-y: auto;
         box-shadow: 0 3px 10px #000000a6;
@@ -250,34 +302,34 @@ textarea {
     }
 
     .setting {
-            display: flex;
-            padding-top: .5em;
-            flex-direction: row;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: nowrap;
-            gap: 1em;
-            max-width: 350px;
-            border-top: 1px solid var(--high-bg);
+        display: flex;
+        padding-top: .5em;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: nowrap;
+        gap: 1em;
+        max-width: 350px;
+        border-top: 1px solid var(--high-bg);
 
-            &>.text_part {
-                flex: 1;
+        &>.text_part {
+            flex: 1;
 
-                &>p{
-                    margin: 0;
-                    opacity: .5;
-                    font-size: small;
-                    margin-top: 5px;
-                }
-            }
-
-            &>input {
-                                min-width: 0;
-                width: 32px;
-                background: var(--dull-bg);
-                padding: .5em;
-                border-radius: 5px;
-                text-align: center;
+            &>p {
+                margin: 0;
+                opacity: .5;
+                font-size: small;
+                margin-top: 5px;
             }
         }
+
+        &>input {
+            min-width: 0;
+            width: 32px;
+            background: var(--dull-bg);
+            padding: .5em;
+            border-radius: 5px;
+            text-align: center;
+        }
+    }
 }
